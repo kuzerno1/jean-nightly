@@ -1,0 +1,15 @@
+diff --git a/src-tauri/tauri.conf.json b/src-tauri/tauri.conf.json
+index a90fd25..74c0265 100644
+--- a/src-tauri/tauri.conf.json
++++ b/src-tauri/tauri.conf.json
+@@ -65,8 +65,8 @@
+     "macOS": {
+       "frameworks": [],
+       "minimumSystemVersion": "10.15",
+-      "signingIdentity": "Developer ID Application: coolLabs Solutions Korlatolt Felelossegu Tarsasag (8D3F6CQFS8)",
+-      "providerShortName": "8D3F6CQFS8",
++      "signingIdentity": null,
++      "providerShortName": null,
+       "entitlements": null,
+       "exceptionDomain": ""
+     }

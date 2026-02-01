@@ -1,0 +1,145 @@
+name: Nightly Build
+
+on:
+  workflow_dispatch:      # Manual trigger
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      changelog: ${{ steps.changelog.outputs.content }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync upstream and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/coollabsio/jean.git || true
+          git fetch upstream
+          UPSTREAM_SHA=$(git rev-parse upstream/main)
+          if git subtree pull --prefix=jean upstream main --squash -m "chore: sync upstream
+
+          Synced from: $UPSTREAM_SHA"; then
+            git push origin main
+          else
+            echo "Already up to date or no changes to sync"
+          fi
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          git remote add upstream https://github.com/coollabsio/jean.git || true
+          git fetch upstream
+
+          # Get last synced upstream commit from previous subtree merge
+          LAST_SHA=$(git log --grep="Synced from:" -1 --format="%b" 2>/dev/null | grep -oE '[a-f0-9]{40}' | head -1 || echo "")
+
+          # Get current upstream HEAD
+          CURRENT_SHA=$(git rev-parse upstream/main)
+
+          if [ -n "$LAST_SHA" ] && [ "$LAST_SHA" != "$CURRENT_SHA" ]; then
+            # Generate changelog from upstream repo commits
+            {
+              echo 'content<<EOF'
+              echo "### Changes from upstream"
+              echo ""
+              git log --oneline "$LAST_SHA..$CURRENT_SHA" 2>/dev/null | head -50 | while IFS= read -r line; do
+                echo "- $line"
+              done
+              echo ""
+              echo "[Full diff](https://github.com/coollabsio/jean/compare/${LAST_SHA}...${CURRENT_SHA})"
+              echo 'EOF'
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo 'content<<EOF'
+              echo "No new changes from upstream since last sync."
+              echo 'EOF'
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: sync
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: '--target universal-apple-darwin --bundles app,dmg'
+          - platform: windows-latest
+            args: '--bundles msi,nsis'
+
+    runs-on: ${{ matrix.platform }}
+    defaults:
+      run:
+        working-directory: jean
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply patches
+        run: |
+          set -e
+          for patch in patches/*.patch; do
+            if [ -f "$patch" ]; then
+              echo "Applying patch: $patch"
+              git apply --directory=jean "$patch"
+            fi
+          done
+        shell: bash
+        working-directory: ${{ github.workspace }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+          cache-dependency-path: jean/package-lock.json
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add macOS targets
+        if: matrix.platform == 'macos-latest'
+        run: |
+          rustup target add aarch64-apple-darwin
+          rustup target add x86_64-apple-darwin
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: './jean/src-tauri -> target'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and Release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: jean
+          tauriScript: npm run tauri
+          tagName: nightly-${{ github.run_number }}
+          releaseName: 'Nightly Build #${{ github.run_number }}'
+          releaseBody: |
+            ## Nightly Build
+
+            Built from main branch with local patches applied.
+
+            ${{ needs.sync.outputs.changelog }}
+
+            **Note:** This is an automated nightly build.
+          releaseDraft: false
+          prerelease: true
+          includeUpdaterJson: true
+          args: ${{ matrix.args }}

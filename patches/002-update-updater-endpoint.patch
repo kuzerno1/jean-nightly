@@ -1,0 +1,17 @@
+diff --git a/src-tauri/tauri.conf.json b/src-tauri/tauri.conf.json
+index a90fd25..3376637 100644
+--- a/src-tauri/tauri.conf.json
++++ b/src-tauri/tauri.conf.json
+@@ -75,9 +75,9 @@
+     "updater": {
+       "active": true,
+       "endpoints": [
+-        "https://github.com/coollabsio/jean/releases/latest/download/latest.json"
++        "https://github.com/kuzerno1/jean-nightly/releases/latest/download/latest.json"
+       ],
+       "dialog": true,
+-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDYyNzkyNTI0QUFENzA3MUYKUldRZkI5ZXFKQ1Y1WWdod05PSjhkcUVBUnNyOWJTcEpVazBRN01SUndya2JQcTdNeUxrS0pFY3QK"
++      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY4NjQ3MEY1Mjg4NTQxQUMKUldTc1FZVW85WEJrK0ZqYXV5L2g3Ulc4dUZUSjlVLzY1ZXp0T0I5MHJMSlhJRGR3QlNkU1lxUHIK"
+     }
+   }
+ }

@@ -1,0 +1,275 @@
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { Terminal, Wand2 } from 'lucide-react'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command'
+import { Popover, PopoverContent, PopoverAnchor } from '@/components/ui/popover'
+import { useClaudeSkills, useClaudeCommands } from '@/services/skills'
+import type { ClaudeSkill, ClaudeCommand, PendingSkill } from '@/types/chat'
+import { cn } from '@/lib/utils'
+
+export interface SlashPopoverHandle {
+  moveUp: () => void
+  moveDown: () => void
+  selectCurrent: () => void
+}
+
+interface SlashPopoverProps {
+  /** Whether the popover is open */
+  open: boolean
+  /** Callback when popover should close */
+  onOpenChange: (open: boolean) => void
+  /** Callback when a skill is selected (adds to pending, continues editing) */
+  onSelectSkill: (skill: PendingSkill) => void
+  /** Callback when a command is selected (executes immediately) */
+  onSelectCommand: (command: ClaudeCommand) => void
+  /** Current search query (text after /) */
+  searchQuery: string
+  /** Position for the anchor (relative to textarea container) */
+  anchorPosition: { top: number; left: number } | null
+  /** Whether slash is at prompt start (enables commands) */
+  isAtPromptStart: boolean
+  /** Ref to expose navigation methods to parent */
+  handleRef?: React.RefObject<SlashPopoverHandle | null>
+}
+
+type ListItem =
+  | { type: 'command'; data: ClaudeCommand }
+  | { type: 'skill'; data: ClaudeSkill }
+
+export function SlashPopover({
+  open,
+  onOpenChange,
+  onSelectSkill,
+  onSelectCommand,
+  searchQuery,
+  anchorPosition,
+  isAtPromptStart,
+  handleRef,
+}: SlashPopoverProps) {
+  const { data: skills = [] } = useClaudeSkills()
+  const { data: commands = [] } = useClaudeCommands()
+  const listRef = useRef<HTMLDivElement>(null)
+  const [selectedIndex, setSelectedIndex] = useState(0)
+
+  // Filter and combine items based on search query and context
+  const filteredItems = useMemo(() => {
+    const query = searchQuery.toLowerCase()
+    const items: ListItem[] = []
+
+    // Add commands first (only if at prompt start)
+    if (isAtPromptStart) {
+      const filteredCommands = query
+        ? commands.filter(
+            c =>
+              c.name.toLowerCase().includes(query) ||
+              c.description?.toLowerCase().includes(query)
+          )
+        : commands
+
+      filteredCommands.slice(0, 10).forEach(cmd => {
+        items.push({ type: 'command', data: cmd })
+      })
+    }
+
+    // Add skills
+    const filteredSkills = query
+      ? skills.filter(
+          s =>
+            s.name.toLowerCase().includes(query) ||
+            s.description?.toLowerCase().includes(query)
+        )
+      : skills
+
+    filteredSkills.slice(0, 10).forEach(skill => {
+      items.push({ type: 'skill', data: skill })
+    })
+
+    return items.slice(0, 15) // Limit total to 15
+  }, [skills, commands, searchQuery, isAtPromptStart])
+
+  // Clamp selectedIndex to valid range (handles case when filter reduces results)
+  const clampedSelectedIndex = Math.min(
+    selectedIndex,
+    Math.max(0, filteredItems.length - 1)
+  )
+
+  const handleSelectSkill = useCallback(
+    (skill: ClaudeSkill) => {
+      const pendingSkill: PendingSkill = {
+        id: crypto.randomUUID(),
+        name: skill.name,
+        path: skill.path,
+      }
+      onSelectSkill(pendingSkill)
+      onOpenChange(false)
+    },
+    [onSelectSkill, onOpenChange]
+  )
+
+  const handleSelectCommand = useCallback(
+    (command: ClaudeCommand) => {
+      onSelectCommand(command)
+      onOpenChange(false)
+    },
+    [onSelectCommand, onOpenChange]
+  )
+
+  // Handle selecting the currently highlighted item
+  const selectHighlighted = useCallback(() => {
+    const item = filteredItems[clampedSelectedIndex]
+    if (!item) return
+
+    if (item.type === 'command') {
+      handleSelectCommand(item.data)
+    } else {
+      handleSelectSkill(item.data)
+    }
+  }, [filteredItems, clampedSelectedIndex, handleSelectCommand, handleSelectSkill])
+
+  // Expose navigation methods via ref for parent to call
+  useImperativeHandle(
+    handleRef,
+    () => {
+      console.log('[SlashPopover] useImperativeHandle creating handle, filteredItems.length:', filteredItems.length)
+      return {
+        moveUp: () => {
+          console.log('[SlashPopover] moveUp called, current selectedIndex:', selectedIndex)
+          setSelectedIndex(i => Math.max(i - 1, 0))
+        },
+        moveDown: () => {
+          console.log('[SlashPopover] moveDown called, current selectedIndex:', selectedIndex, 'max:', filteredItems.length - 1)
+          setSelectedIndex(i => Math.min(i + 1, filteredItems.length - 1))
+        },
+        selectCurrent: () => {
+          console.log('[SlashPopover] selectCurrent called, clampedSelectedIndex:', clampedSelectedIndex)
+          selectHighlighted()
+        },
+      }
+    },
+    [filteredItems.length, selectHighlighted, selectedIndex, clampedSelectedIndex]
+  )
+
+  // Scroll selected item into view
+  useEffect(() => {
+    const list = listRef.current
+    if (!list) return
+
+    const selectedItem = list.querySelector(
+      `[data-index="${clampedSelectedIndex}"]`
+    )
+    selectedItem?.scrollIntoView({ block: 'nearest' })
+  }, [clampedSelectedIndex])
+
+  if (!open || !anchorPosition) return null
+
+  // Split items by type for grouped rendering
+  const commandItems = filteredItems.filter(item => item.type === 'command')
+  const skillItems = filteredItems.filter(item => item.type === 'skill')
+
+  return (
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverAnchor
+        style={{
+          position: 'absolute',
+          top: anchorPosition.top,
+          left: anchorPosition.left,
+          pointerEvents: 'none',
+        }}
+      />
+      <PopoverContent
+        className="w-80 p-0"
+        align="start"
+        side="top"
+        sideOffset={4}
+        onOpenAutoFocus={e => e.preventDefault()}
+        onCloseAutoFocus={e => e.preventDefault()}
+      >
+        <Command shouldFilter={false}>
+          <CommandList ref={listRef} className="max-h-[250px]">
+            {filteredItems.length === 0 ? (
+              <CommandEmpty>No commands or skills found</CommandEmpty>
+            ) : (
+              <>
+                {commandItems.length > 0 && (
+                  <CommandGroup heading="Commands">
+                    {commandItems.map((item, localIndex) => {
+                      // Commands come first in filteredItems, so localIndex = globalIndex
+                      const globalIndex = localIndex
+                      const isSelected = globalIndex === clampedSelectedIndex
+                      return (
+                        <CommandItem
+                          key={`cmd-${item.data.name}`}
+                          data-index={globalIndex}
+                          value={`cmd-${item.data.name}`}
+                          onSelect={() => handleSelectCommand(item.data)}
+                          className={cn(
+                            'flex items-center gap-2 cursor-pointer',
+                            // Override cmdk's internal selection styling - we manage selection ourselves
+                            'data-[selected=true]:bg-transparent data-[selected=true]:text-foreground',
+                            isSelected && '!bg-accent !text-accent-foreground'
+                          )}
+                        >
+                          <Terminal className="h-4 w-4 shrink-0 text-blue-500" />
+                          <div className="flex flex-col min-w-0">
+                            <span className="truncate text-sm font-medium">
+                              /{item.data.name}
+                            </span>
+                            {item.data.description && (
+                              <span className="truncate text-xs text-muted-foreground">
+                                {item.data.description}
+                              </span>
+                            )}
+                          </div>
+                        </CommandItem>
+                      )
+                    })}
+                  </CommandGroup>
+                )}
+                {skillItems.length > 0 && (
+                  <CommandGroup heading="Skills">
+                    {skillItems.map((item, localIndex) => {
+                      // Skills come after commands, so globalIndex = commandItems.length + localIndex
+                      const globalIndex = commandItems.length + localIndex
+                      const isSelected = globalIndex === clampedSelectedIndex
+                      return (
+                        <CommandItem
+                          key={`skill-${item.data.name}`}
+                          data-index={globalIndex}
+                          value={`skill-${item.data.name}`}
+                          onSelect={() => handleSelectSkill(item.data)}
+                          className={cn(
+                            'flex items-center gap-2 cursor-pointer',
+                            // Override cmdk's internal selection styling - we manage selection ourselves
+                            'data-[selected=true]:bg-transparent data-[selected=true]:text-foreground',
+                            isSelected && '!bg-accent !text-accent-foreground'
+                          )}
+                        >
+                          <Wand2 className="h-4 w-4 shrink-0 text-purple-500" />
+                          <div className="flex flex-col min-w-0">
+                            <span className="truncate text-sm font-medium">
+                              /{item.data.name}
+                            </span>
+                            {item.data.description && (
+                              <span className="truncate text-xs text-muted-foreground">
+                                {item.data.description}
+                              </span>
+                            )}
+                          </div>
+                        </CommandItem>
+                      )
+                    })}
+                  </CommandGroup>
+                )}
+              </>
+            )}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  )
+}
