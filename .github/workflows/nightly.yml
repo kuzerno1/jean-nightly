@@ -20,7 +20,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git remote add upstream https://github.com/coollabsio/jean.git || true
+          git remote get-url upstream >/dev/null 2>&1 || git remote add upstream https://github.com/coollabsio/jean.git
           git fetch upstream
           UPSTREAM_SHA=$(git rev-parse upstream/main)
           if git subtree pull --prefix=jean upstream main --squash -m "chore: sync upstream
@@ -34,7 +34,7 @@ jobs:
       - name: Generate changelog
         id: changelog
         run: |
-          git remote add upstream https://github.com/coollabsio/jean.git || true
+          git remote get-url upstream >/dev/null 2>&1 || git remote add upstream https://github.com/coollabsio/jean.git
           git fetch upstream
 
           # Get last synced upstream commit from previous subtree merge
