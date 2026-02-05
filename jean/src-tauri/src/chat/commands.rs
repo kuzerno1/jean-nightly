@@ -15,13 +15,13 @@ use super::storage::{
 };
 use super::types::{
     AllSessionsEntry, AllSessionsResponse, ChatMessage, ClaudeContext, MessageRole, RunStatus,
-    Session, ThinkingLevel, WorktreeSessions,
+    Session, SessionDigest, ThinkingLevel, WorktreeSessions,
 };
 use crate::claude_cli::get_cli_binary_path;
+use crate::http_server::EmitExt;
 use crate::platform::silent_command;
 use crate::projects::storage::load_projects_data;
 use crate::projects::types::SessionType;
-use crate::http_server::EmitExt;
 
 /// Get current Unix timestamp in seconds
 fn now() -> u64 {
@@ -76,6 +76,16 @@ pub async fn get_sessions(
                 session.message_count = Some(count);
             }
         }
+    }
+
+    // Debug logging for session recovery
+    for session in &sessions.sessions {
+        log::trace!(
+            "get_sessions: session={}, last_run_status={:?}, last_run_mode={:?}",
+            session.id,
+            session.last_run_status,
+            session.last_run_execution_mode
+        );
     }
 
     Ok(sessions)
@@ -219,6 +229,9 @@ pub async fn update_session_state(
     denied_message_context: Option<Option<super::types::DeniedMessageContext>>,
     is_reviewing: Option<bool>,
     waiting_for_input: Option<bool>,
+    waiting_for_input_type: Option<Option<String>>,
+    plan_file_path: Option<Option<String>>,
+    pending_plan_message_id: Option<Option<String>>,
 ) -> Result<(), String> {
     log::trace!("Updating session state for: {session_id}");
 
@@ -244,6 +257,15 @@ pub async fn update_session_state(
             }
             if let Some(v) = waiting_for_input {
                 session.waiting_for_input = v;
+            }
+            if let Some(v) = waiting_for_input_type {
+                session.waiting_for_input_type = v;
+            }
+            if let Some(v) = plan_file_path {
+                session.plan_file_path = v;
+            }
+            if let Some(v) = pending_plan_message_id {
+                session.pending_plan_message_id = v;
             }
             Ok(())
         } else {
@@ -933,10 +955,13 @@ pub async fn send_chat_message(
     }
 
     // Notify all clients that a message is being sent (for real-time sync)
-    if let Err(e) = app.emit_all("chat:sending", &serde_json::json!({
-        "session_id": session_id,
-        "worktree_id": worktree_id,
-    })) {
+    if let Err(e) = app.emit_all(
+        "chat:sending",
+        &serde_json::json!({
+            "session_id": session_id,
+            "worktree_id": worktree_id,
+        }),
+    ) {
         log::error!("Failed to emit chat:sending event: {e}");
     }
 
@@ -951,7 +976,7 @@ pub async fn send_chat_message(
             log::error!("{}", error_msg);
 
             // Emit error event so frontend knows what happened
-            
+
             let error_event = super::claude::ErrorEvent {
                 session_id: session_id.clone(),
                 worktree_id: worktree_id.clone(),
@@ -1340,6 +1365,10 @@ pub async fn mark_plan_approved(
                 session.approved_plan_message_ids.push(message_id.clone());
                 log::trace!("Plan marked as approved (added to approved_plan_message_ids)");
             }
+            // Clear waiting state after approval
+            session.waiting_for_input = false;
+            session.pending_plan_message_id = None;
+            session.waiting_for_input_type = None;
             Ok(())
         } else {
             Err(format!("Session not found: {session_id}"))
@@ -2959,6 +2988,31 @@ pub async fn generate_session_digest(
 
     // Call Claude CLI with JSON schema (non-streaming)
     execute_digest_claude(&app, &prompt, &prefs.session_recap_model)
+}
+
+/// Update a session's persisted digest
+///
+/// Called after generating a digest to persist it to disk so it survives app reload.
+#[tauri::command]
+pub async fn update_session_digest(
+    app: AppHandle,
+    session_id: String,
+    digest: SessionDigest,
+) -> Result<(), String> {
+    log::trace!("Persisting digest for session {session_id}");
+
+    // Load existing metadata
+    let metadata = load_metadata(&app, &session_id)?
+        .ok_or_else(|| format!("Session {session_id} not found"))?;
+
+    // Update and save with new digest
+    let mut updated = metadata;
+    updated.digest = Some(digest);
+
+    super::storage::save_metadata(&app, &updated)?;
+
+    log::trace!("Digest persisted for session {session_id}");
+    Ok(())
 }
 
 /// Broadcast a session setting change to all connected clients.

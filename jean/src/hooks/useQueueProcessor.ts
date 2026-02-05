@@ -20,7 +20,9 @@ function buildMessageWithRefs(queuedMsg: QueuedMessage): string {
   // Add file references (from @ mentions)
   if (queuedMsg.pendingFiles.length > 0) {
     const fileRefs = queuedMsg.pendingFiles
-      .map(f => `[File: ${f.relativePath} - Use the Read tool to view this file]`)
+      .map(
+        f => `[File: ${f.relativePath} - Use the Read tool to view this file]`
+      )
       .join('\n')
     message = message ? `${message}\n\n${fileRefs}` : fileRefs
   }
@@ -28,7 +30,10 @@ function buildMessageWithRefs(queuedMsg: QueuedMessage): string {
   // Add skill references (from / mentions)
   if (queuedMsg.pendingSkills.length > 0) {
     const skillRefs = queuedMsg.pendingSkills
-      .map(s => `[Skill: ${s.path} - Read and use this skill to guide your response]`)
+      .map(
+        s =>
+          `[Skill: ${s.path} - Read and use this skill to guide your response]`
+      )
       .join('\n')
     message = message ? `${message}\n\n${skillRefs}` : skillRefs
   }
@@ -36,7 +41,10 @@ function buildMessageWithRefs(queuedMsg: QueuedMessage): string {
   // Add image references
   if (queuedMsg.pendingImages.length > 0) {
     const imageRefs = queuedMsg.pendingImages
-      .map(img => `[Image attached: ${img.path} - Use the Read tool to view this image]`)
+      .map(
+        img =>
+          `[Image attached: ${img.path} - Use the Read tool to view this image]`
+      )
       .join('\n')
     message = message ? `${message}\n\n${imageRefs}` : imageRefs
   }
@@ -44,7 +52,10 @@ function buildMessageWithRefs(queuedMsg: QueuedMessage): string {
   // Add text file references
   if (queuedMsg.pendingTextFiles.length > 0) {
     const textFileRefs = queuedMsg.pendingTextFiles
-      .map(tf => `[Text file attached: ${tf.path} - Use the Read tool to view this file]`)
+      .map(
+        tf =>
+          `[Text file attached: ${tf.path} - Use the Read tool to view this file]`
+      )
       .join('\n')
     message = message ? `${message}\n\n${textFileRefs}` : textFileRefs
   }
@@ -106,6 +117,7 @@ export function useQueueProcessor(): void {
         clearStreamingContent,
         clearToolCalls,
         clearStreamingContentBlocks,
+        setSessionReviewing,
       } = useChatStore.getState()
 
       const worktreeId = sessionWorktreeMap[sessionId]
@@ -144,6 +156,7 @@ export function useQueueProcessor(): void {
       setLastSentMessage(sessionId, queuedMsg.message)
       setError(sessionId, null)
       addSendingSession(sessionId)
+      setSessionReviewing(sessionId, false) // Clear stale review state so canvas shows running status
       setExecutingMode(sessionId, queuedMsg.executionMode)
       setSelectedModel(sessionId, queuedMsg.model)
 

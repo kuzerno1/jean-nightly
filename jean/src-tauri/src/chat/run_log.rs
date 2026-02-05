@@ -438,7 +438,6 @@ pub fn parse_run_to_message(lines: &[String], run: &RunEntry) -> Result<ChatMess
     let mut content = String::new();
     let mut tool_calls: Vec<ToolCall> = Vec::new();
     let mut content_blocks: Vec<ContentBlock> = Vec::new();
-    let mut current_parent_tool_use_id: Option<String> = None;
 
     for line in lines {
         if line.trim().is_empty() {
@@ -460,9 +459,11 @@ pub fn parse_run_to_message(lines: &[String], run: &RunEntry) -> Result<ChatMess
         }
 
         // Track parent_tool_use_id for sub-agent tool calls
-        if let Some(parent_id) = msg.get("parent_tool_use_id").and_then(|v| v.as_str()) {
-            current_parent_tool_use_id = Some(parent_id.to_string());
-        }
+        // Must reset to None for root-level messages, otherwise parallel Tasks get wrong parent
+        let current_parent_tool_use_id = msg
+            .get("parent_tool_use_id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
 
         let msg_type = msg.get("type").and_then(|v| v.as_str()).unwrap_or("");
 

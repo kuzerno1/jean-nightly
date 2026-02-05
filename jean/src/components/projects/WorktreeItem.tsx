@@ -1,6 +1,10 @@
 import { useCallback, useState, useRef, useEffect, useMemo } from 'react'
-import { BorderSpinner } from '@/components/ui/border-spinner'
-import { ArrowDown, ArrowUp, Circle, GitBranch, Square } from 'lucide-react'
+import { StatusIndicator } from '@/components/ui/status-indicator'
+import type {
+  IndicatorStatus,
+  IndicatorVariant,
+} from '@/components/ui/status-indicator'
+import { ArrowDown, ArrowUp, GitBranch } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { isBaseSession, type Worktree } from '@/types/projects'
@@ -173,10 +177,29 @@ export function WorktreeItem({
     return false
   }, [waitingForInputSessionIds, sessionWorktreeMap, worktree.id])
 
+  // Check for persisted waiting state from session metadata (fallback when messages not loaded)
+  const hasPersistedWaitingQuestion = useMemo(() => {
+    const sessions = sessionsData?.sessions ?? []
+    return sessions.some(
+      s => s.waiting_for_input && s.waiting_for_input_type === 'question'
+    )
+  }, [sessionsData?.sessions])
+
+  const hasPersistedWaitingPlan = useMemo(() => {
+    const sessions = sessionsData?.sessions ?? []
+    return sessions.some(
+      s => s.waiting_for_input && s.waiting_for_input_type === 'plan'
+    )
+  }, [sessionsData?.sessions])
+
   // Question waiting (blinks) vs plan waiting (solid)
   const isWaitingQuestion =
-    isStreamingWaitingQuestion || hasPendingQuestion || isExplicitlyWaiting
-  const isWaitingPlan = isStreamingWaitingPlan || hasPendingPlan
+    isStreamingWaitingQuestion ||
+    hasPendingQuestion ||
+    isExplicitlyWaiting ||
+    hasPersistedWaitingQuestion
+  const isWaitingPlan =
+    isStreamingWaitingPlan || hasPendingPlan || hasPersistedWaitingPlan
 
   // Check if any session in this worktree is in review state (done, needs user review)
   const isReviewing = useMemo(() => {
@@ -203,14 +226,36 @@ export function WorktreeItem({
     executionModes,
   ])
 
-  // Determine indicator color: blinking yellow=waiting for user, green=review, grey=idle
-  // Running state uses BorderSpinner component instead (handled in render)
-  const indicatorColor = useMemo(() => {
-    if (isWaitingQuestion) return 'text-yellow-500 animate-blink shadow-[0_0_6px_currentColor]'
-    if (isWaitingPlan) return 'text-yellow-500 animate-blink shadow-[0_0_6px_currentColor]'
-    if (isReviewing) return 'text-green-500 shadow-[0_0_6px_currentColor]'
-    return 'text-muted-foreground/50'
-  }, [isWaitingQuestion, isWaitingPlan, isReviewing])
+  // Determine indicator status and variant for StatusIndicator component
+  const { indicatorStatus, indicatorVariant } = useMemo((): {
+    indicatorStatus: IndicatorStatus
+    indicatorVariant?: IndicatorVariant
+  } => {
+    if (isWaitingQuestion || isWaitingPlan) {
+      return { indicatorStatus: 'waiting' }
+    }
+    if (isChatRunning) {
+      return {
+        indicatorStatus: 'running',
+        indicatorVariant:
+          runningSessionExecutionMode === 'yolo' ? 'destructive' : 'default',
+      }
+    }
+    if (loadingOperation) {
+      return { indicatorStatus: 'running', indicatorVariant: 'loading' }
+    }
+    if (isReviewing) {
+      return { indicatorStatus: 'review' }
+    }
+    return { indicatorStatus: 'idle' }
+  }, [
+    isWaitingQuestion,
+    isWaitingPlan,
+    isChatRunning,
+    runningSessionExecutionMode,
+    loadingOperation,
+    isReviewing,
+  ])
 
   // Responsive padding based on sidebar width
   const sidebarWidth = useSidebarWidth()
@@ -327,7 +372,8 @@ export function WorktreeItem({
   const handlePull = useCallback(
     async (e: React.MouseEvent) => {
       e.stopPropagation()
-      const { setWorktreeLoading, clearWorktreeLoading } = useChatStore.getState()
+      const { setWorktreeLoading, clearWorktreeLoading } =
+        useChatStore.getState()
       setWorktreeLoading(worktree.id, 'pull')
       const toastId = toast.loading('Pulling changes...')
       try {
@@ -347,7 +393,9 @@ export function WorktreeItem({
           // Small delay to ensure worktree is selected before dispatching
           setTimeout(() => {
             window.dispatchEvent(
-              new CustomEvent('magic-command', { detail: { command: 'resolve-conflicts' } })
+              new CustomEvent('magic-command', {
+                detail: { command: 'resolve-conflicts' },
+              })
             )
           }, 100)
         } else {
@@ -393,36 +441,12 @@ export function WorktreeItem({
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
       >
-        {/* Status indicator: circle for base session, square for worktrees */}
-        {/* Priority: chat running > loading operation > idle states */}
-        {(isWaitingQuestion || isWaitingPlan) ? (
-          isBase ? (
-            <Circle className={cn('h-2 w-2 shrink-0 fill-current rounded-full', indicatorColor)} />
-          ) : (
-            <Square className={cn('h-2 w-2 shrink-0 fill-current rounded-sm', indicatorColor)} />
-          )
-        ) : isChatRunning ? (
-          <BorderSpinner
-            shape={isBase ? 'circle' : 'square'}
-            className={cn(
-              'h-2 w-2 shadow-[0_0_6px_currentColor]',
-              runningSessionExecutionMode === 'yolo' ? 'text-destructive' : 'text-yellow-500'
-            )}
-            bgClassName={
-              runningSessionExecutionMode === 'yolo' ? 'fill-destructive/50' : 'fill-yellow-500/50'
-            }
-          />
-        ) : loadingOperation ? (
-          <BorderSpinner
-            shape={isBase ? 'circle' : 'square'}
-            className="h-2 w-2 shadow-[0_0_6px_currentColor] text-cyan-500"
-            bgClassName="fill-cyan-500/50"
-          />
-        ) : isBase ? (
-          <Circle className={cn('h-2 w-2 shrink-0 fill-current rounded-full', indicatorColor)} />
-        ) : (
-          <Square className={cn('h-2 w-2 shrink-0 fill-current rounded-sm', indicatorColor)} />
-        )}
+        {/* Status indicator */}
+        <StatusIndicator
+          status={indicatorStatus}
+          variant={indicatorVariant}
+          className="h-2 w-2"
+        />
 
         {/* Workspace name - editable on double-click */}
         {isEditing ? (
@@ -490,7 +514,6 @@ export function WorktreeItem({
             <span className="text-red-500">-{uncommittedRemoved}</span>
           </span>
         )}
-
       </div>
     </WorktreeContextMenu>
   )

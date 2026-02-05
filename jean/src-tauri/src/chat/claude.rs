@@ -653,7 +653,6 @@ pub fn tail_claude_output(
     let mut claude_session_id = String::new();
     let mut tool_calls: Vec<ToolCall> = Vec::new();
     let mut content_blocks: Vec<ContentBlock> = Vec::new();
-    let mut current_parent_tool_use_id: Option<String> = None;
     let mut completed = false;
     let mut cancelled = false;
     let mut usage: Option<UsageData> = None;
@@ -710,9 +709,11 @@ pub fn tail_claude_output(
             }
 
             // Track parent_tool_use_id for sub-agent tool calls
-            if let Some(parent_id) = msg.get("parent_tool_use_id").and_then(|v| v.as_str()) {
-                current_parent_tool_use_id = Some(parent_id.to_string());
-            }
+            // Must reset to None for root-level messages, otherwise parallel Tasks get wrong parent
+            let current_parent_tool_use_id = msg
+                .get("parent_tool_use_id")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
 
             let msg_type = msg.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
@@ -797,7 +798,9 @@ pub fn tail_claude_output(
                                             worktree_id: worktree_id.to_string(),
                                             tool_call_id: id.clone(),
                                         };
-                                        if let Err(e) = app.emit_all("chat:tool_block", &block_event) {
+                                        if let Err(e) =
+                                            app.emit_all("chat:tool_block", &block_event)
+                                        {
                                             log::error!("Failed to emit tool_block: {e}");
                                         }
 
@@ -1013,7 +1016,9 @@ pub fn tail_claude_output(
 
                         // Emit compacted event with metadata if available
                         if let Some(metadata_val) = msg.get("compactMetadata") {
-                            if let Ok(metadata) = serde_json::from_value::<CompactMetadata>(metadata_val.clone()) {
+                            if let Ok(metadata) =
+                                serde_json::from_value::<CompactMetadata>(metadata_val.clone())
+                            {
                                 let compacted_event = CompactedEvent {
                                     session_id: session_id.to_string(),
                                     worktree_id: worktree_id.to_string(),

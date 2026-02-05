@@ -91,18 +91,18 @@ const FILE_MENTION_REGEX =
 const SKILL_ATTACHMENT_REGEX =
   /\[Skill: (.+?) - Read and use this skill to guide your response\]/g
 
-/** Extract file mention paths from message content */
+/** Extract file mention paths from message content (deduplicated) */
 function extractFileMentionPaths(content: string): string[] {
-  const paths: string[] = []
+  const paths = new Set<string>()
   let match
   while ((match = FILE_MENTION_REGEX.exec(content)) !== null) {
     if (match[1]) {
-      paths.push(match[1])
+      paths.add(match[1])
     }
   }
   // Reset regex lastIndex for next use
   FILE_MENTION_REGEX.lastIndex = 0
-  return paths
+  return Array.from(paths)
 }
 
 /** Remove file mention markers from content for cleaner display */
@@ -110,18 +110,18 @@ function stripFileMentionMarkers(content: string): string {
   return content.replace(FILE_MENTION_REGEX, '').trim()
 }
 
-/** Extract skill paths from message content */
+/** Extract skill paths from message content (deduplicated) */
 function extractSkillPaths(content: string): string[] {
-  const paths: string[] = []
+  const paths = new Set<string>()
   let match
   while ((match = SKILL_ATTACHMENT_REGEX.exec(content)) !== null) {
     if (match[1]) {
-      paths.push(match[1])
+      paths.add(match[1])
     }
   }
   // Reset regex lastIndex for next use
   SKILL_ATTACHMENT_REGEX.lastIndex = 0
-  return paths
+  return Array.from(paths)
 }
 
 /** Remove skill attachment markers from content for cleaner display */
@@ -146,6 +146,8 @@ interface MessageItemProps {
   worktreePath: string
   /** Keyboard shortcut to display on approve button */
   approveShortcut: string
+  /** Keyboard shortcut to display on approve yolo button */
+  approveShortcutYolo?: string
   /** Ref to attach to approve button for visibility tracking */
   approveButtonRef?: React.RefObject<HTMLButtonElement | null>
   /** Whether Claude is currently streaming (affects last message rendering) */
@@ -198,6 +200,7 @@ export const MessageItem = memo(function MessageItem({
   sessionId,
   worktreePath,
   approveShortcut,
+  approveShortcutYolo,
   approveButtonRef,
   isSending,
   onPlanApproval,
@@ -305,11 +308,18 @@ export const MessageItem = memo(function MessageItem({
             // Extract skill name from path (e.g., /Users/.../skills/react/SKILL.md -> react)
             const parts = normalizePath(path).split('/')
             const skillsIdx = parts.findIndex(p => p === 'skills')
-            const name = skillsIdx >= 0 && parts[skillsIdx + 1] ? parts[skillsIdx + 1] : path
+            const name =
+              skillsIdx >= 0 && parts[skillsIdx + 1]
+                ? parts[skillsIdx + 1]
+                : path
             return (
               <SkillBadge
                 key={`${message.id}-skill-${idx}`}
-                skill={{ id: `${message.id}-skill-${idx}`, name: name ?? path, path }}
+                skill={{
+                  id: `${message.id}-skill-${idx}`,
+                  name: name ?? path,
+                  path,
+                }}
                 compact
               />
             )
@@ -422,7 +432,9 @@ export const MessageItem = memo(function MessageItem({
                 case 'exitPlanMode': {
                   // Render plan inline in its natural position
                   // Extract plan from this specific tool's input (not global search)
-                  const toolInput = item.tool.input as { plan?: string } | undefined
+                  const toolInput = item.tool.input as
+                    | { plan?: string }
+                    | undefined
                   const inlinePlan = toolInput?.plan
                   if (inlinePlan) {
                     return (
@@ -465,6 +477,7 @@ export const MessageItem = memo(function MessageItem({
             onPlanApprovalYolo={handlePlanApprovalYolo}
             buttonRef={isLatestPlanRequest ? approveButtonRef : undefined}
             shortcut={approveShortcut}
+            shortcutYolo={approveShortcutYolo}
           />
         </>
       ) : (
@@ -518,6 +531,7 @@ export const MessageItem = memo(function MessageItem({
                 onPlanApprovalYolo={handlePlanApprovalYolo}
                 buttonRef={isLatestPlanRequest ? approveButtonRef : undefined}
                 shortcut={approveShortcut}
+                shortcutYolo={approveShortcutYolo}
               />
             )}
         </>
