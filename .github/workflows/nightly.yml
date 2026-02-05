@@ -17,11 +17,14 @@ jobs:
           fetch-depth: 0
 
       - name: Sync upstream and push
+        id: sync
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git remote get-url upstream >/dev/null 2>&1 || git remote add upstream https://github.com/coollabsio/jean.git
           git fetch upstream
+          PREV_SYNC_SHA=$(git log --grep="Synced from:" --format="%b" -n 1 2>/dev/null | grep -oE '[a-f0-9]{40}' || true)
+          echo "prev_sha=$PREV_SYNC_SHA" >> "$GITHUB_OUTPUT"
           UPSTREAM_SHA=$(git rev-parse upstream/main)
           if git subtree pull --prefix=jean upstream main --squash -m "chore: sync upstream
 
@@ -39,17 +42,7 @@ jobs:
 
           # Get current upstream HEAD
           CURRENT_SHA=$(git rev-parse upstream/main)
-
-          # Get last synced upstream commit from previous subtree merge.
-          # If the latest sync already matches CURRENT_SHA, use the previous one.
-          SYNC_SHAS=$(git log --grep="Synced from:" --format="%b" 2>/dev/null | grep -oE '[a-f0-9]{40}' || true)
-          LATEST_SHA=$(printf '%s\n' "$SYNC_SHAS" | head -1)
-          PREV_SHA=$(printf '%s\n' "$SYNC_SHAS" | sed -n '2p')
-          if [ -n "$LATEST_SHA" ] && [ "$LATEST_SHA" = "$CURRENT_SHA" ] && [ -n "$PREV_SHA" ]; then
-            LAST_SHA="$PREV_SHA"
-          else
-            LAST_SHA="$LATEST_SHA"
-          fi
+          LAST_SHA="${{ steps.sync.outputs.prev_sha }}"
 
           if [ -n "$LAST_SHA" ] && [ "$LAST_SHA" != "$CURRENT_SHA" ]; then
             # Generate changelog from upstream repo commits
@@ -62,6 +55,20 @@ jobs:
               done
               echo ""
               echo "[Full diff](https://github.com/coollabsio/jean/compare/${LAST_SHA}...${CURRENT_SHA})"
+              echo 'EOF'
+            } >> "$GITHUB_OUTPUT"
+          elif [ -z "$LAST_SHA" ]; then
+            {
+              echo 'content<<EOF'
+              echo "### Changes from upstream"
+              echo ""
+              echo "_No previous sync found. Showing latest 50 upstream commits._"
+              echo ""
+              git log --oneline -50 "$CURRENT_SHA" 2>/dev/null | while IFS= read -r line; do
+                echo "- $line"
+              done
+              echo ""
+              echo "[Upstream commits](https://github.com/coollabsio/jean/commits/${CURRENT_SHA})"
               echo 'EOF'
             } >> "$GITHUB_OUTPUT"
           else
