@@ -37,11 +37,19 @@ jobs:
           git remote get-url upstream >/dev/null 2>&1 || git remote add upstream https://github.com/coollabsio/jean.git
           git fetch upstream
 
-          # Get last synced upstream commit from previous subtree merge
-          LAST_SHA=$(git log --grep="Synced from:" -1 --format="%b" 2>/dev/null | grep -oE '[a-f0-9]{40}' | head -1 || echo "")
-
           # Get current upstream HEAD
           CURRENT_SHA=$(git rev-parse upstream/main)
+
+          # Get last synced upstream commit from previous subtree merge.
+          # If the latest sync already matches CURRENT_SHA, use the previous one.
+          SYNC_SHAS=$(git log --grep="Synced from:" --format="%b" 2>/dev/null | grep -oE '[a-f0-9]{40}' || true)
+          LATEST_SHA=$(printf '%s\n' "$SYNC_SHAS" | head -1)
+          PREV_SHA=$(printf '%s\n' "$SYNC_SHAS" | sed -n '2p')
+          if [ -n "$LATEST_SHA" ] && [ "$LATEST_SHA" = "$CURRENT_SHA" ] && [ -n "$PREV_SHA" ]; then
+            LAST_SHA="$PREV_SHA"
+          else
+            LAST_SHA="$LATEST_SHA"
+          fi
 
           if [ -n "$LAST_SHA" ] && [ "$LAST_SHA" != "$CURRENT_SHA" ]; then
             # Generate changelog from upstream repo commits
