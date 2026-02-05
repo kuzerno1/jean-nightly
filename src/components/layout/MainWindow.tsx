@@ -26,6 +26,7 @@ import { useMainWindowEventListeners } from '@/hooks/useMainWindowEventListeners
 import { useCloseSessionOrWorktreeKeybinding } from '@/services/chat'
 import { useUIStatePersistence } from '@/hooks/useUIStatePersistence'
 import { useSessionStatePersistence } from '@/hooks/useSessionStatePersistence'
+import { useSessionPrefetch } from '@/hooks/useSessionPrefetch'
 import { useRestoreLastArchived } from '@/hooks/useRestoreLastArchived'
 import { useArchiveCleanup } from '@/hooks/useArchiveCleanup'
 import {
@@ -34,7 +35,12 @@ import {
   useWorktreePolling,
   type WorktreePollingInfo,
 } from '@/services/git-status'
-import { useWorktree, useProjects, useCreateWorktreeKeybinding, useWorktreeEvents } from '@/services/projects'
+import {
+  useWorktree,
+  useProjects,
+  useCreateWorktreeKeybinding,
+  useWorktreeEvents,
+} from '@/services/projects'
 import { usePreferences } from '@/services/preferences'
 import { useSessions } from '@/services/chat'
 import { useChatStore } from '@/store/chat-store'
@@ -59,9 +65,17 @@ export function MainWindow() {
 
   // Fetch preferences and session data for title
   const { data: preferences } = usePreferences()
-  const { data: sessionsData } = useSessions(selectedWorktreeId ?? null, worktree?.path ?? null)
+  const { data: sessionsData } = useSessions(
+    selectedWorktreeId ?? null,
+    worktree?.path ?? null
+  )
   const activeSessionId = useChatStore(state =>
     selectedWorktreeId ? state.activeSessionIds[selectedWorktreeId] : undefined
+  )
+  const isViewingCanvasTabRaw = useChatStore(state =>
+    selectedWorktreeId
+      ? (state.viewingCanvasTab[selectedWorktreeId] ?? true)
+      : false
   )
 
   // Find active session name
@@ -73,7 +87,8 @@ export function MainWindow() {
   // Compute window title based on selected project/worktree
   const windowTitle = useMemo(() => {
     if (!project || !worktree) return 'Jean'
-    const branchSuffix = worktree.branch !== worktree.name ? ` (${worktree.branch})` : ''
+    const branchSuffix =
+      worktree.branch !== worktree.name ? ` (${worktree.branch})` : ''
 
     // Add session name when grouping enabled
     if (preferences?.session_grouping_enabled && activeSessionName) {
@@ -81,7 +96,19 @@ export function MainWindow() {
     }
 
     return `${project.name} › ${worktree.name}${branchSuffix}`
-  }, [project, worktree, preferences?.session_grouping_enabled, activeSessionName])
+  }, [
+    project,
+    worktree,
+    preferences?.session_grouping_enabled,
+    activeSessionName,
+  ])
+
+  // Determine if canvas view is active (for hiding title bar)
+  const canvasEnabled = preferences?.canvas_enabled ?? true
+  const canvasOnlyMode = preferences?.canvas_only_mode ?? false
+  const isViewingCanvasTab = canvasEnabled
+    ? canvasOnlyMode || isViewingCanvasTabRaw
+    : false
 
   // Compute polling info - null if no worktree or data not loaded
   const pollingInfo: WorktreePollingInfo | null = useMemo(() => {
@@ -103,6 +130,10 @@ export function MainWindow() {
 
   // Persist session-specific state (answered questions, fixed findings, etc.)
   useSessionStatePersistence()
+
+  // Prefetch sessions for all projects on startup (regardless of sidebar visibility)
+  // This ensures session statuses (review, waiting) are restored immediately
+  useSessionPrefetch(projects)
 
   // Ref for the sidebar element to update width directly during drag
   const sidebarRef = useRef<HTMLDivElement>(null)
@@ -183,12 +214,14 @@ export function MainWindow() {
   )
 
   return (
-    <div className={`flex h-screen w-full flex-col overflow-hidden bg-background ${isNativeApp() ? 'rounded-xl' : ''}`}>
+    <div
+      className={`flex h-screen w-full flex-col overflow-hidden bg-background ${isNativeApp() ? 'rounded-xl' : ''}`}
+    >
       {/* Dev Mode Banner */}
       <DevModeBanner />
 
       {/* Title Bar */}
-      <TitleBar title={windowTitle} />
+      <TitleBar title={windowTitle} hideTitle={isViewingCanvasTab} />
 
       {/* Main Content Area */}
       <div className="flex flex-1 overflow-hidden">

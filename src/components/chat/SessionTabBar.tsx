@@ -32,6 +32,7 @@ import {
   Clock,
   Eye,
   FileText,
+  LayoutGrid,
   MessageSquare,
   Sparkles,
   Zap,
@@ -304,7 +305,13 @@ interface SessionState {
 }
 
 // Collapsible dropdown for grouped sessions
-type GroupType = 'active' | 'planning' | 'vibing' | 'yoloing' | 'waiting' | 'review'
+type GroupType =
+  | 'active'
+  | 'planning'
+  | 'vibing'
+  | 'yoloing'
+  | 'waiting'
+  | 'review'
 
 interface SessionGroupDropdownProps {
   label: string
@@ -440,7 +447,9 @@ function SessionGroupDropdown({
           <span
             className={cn(
               'rounded-full px-1.5 py-0.5 text-[10px] font-medium',
-              isEmpty ? 'bg-muted/50 text-muted-foreground/50' : styles.badgeClass
+              isEmpty
+                ? 'bg-muted/50 text-muted-foreground/50'
+                : styles.badgeClass
             )}
           >
             {sessions.length}
@@ -466,9 +475,7 @@ function SessionGroupDropdown({
       >
         <div className="flex flex-col gap-0.5">
           {sessions.map(state => {
-            const isActive =
-              state.id === activeSessionId &&
-              !isViewingReviewTab
+            const isActive = state.id === activeSessionId && !isViewingReviewTab
             const isSessionReviewing = reviewingSessions[state.id] ?? false
 
             return (
@@ -530,14 +537,23 @@ export function SessionTabBar({
   const isViewingReviewTab = useChatStore(
     state => state.viewingReviewTab[worktreeId] ?? false
   )
+  const isViewingCanvasTabRaw = useChatStore(
+    state => state.viewingCanvasTab[worktreeId] ?? true // Default to canvas view
+  )
+  // Apply canvas preferences: if canvas disabled, never show; if canvas-only, always show
+  const canvasEnabled = preferences?.canvas_enabled ?? true
+  const canvasOnlyMode = preferences?.canvas_only_mode ?? false
+  const isViewingCanvasTab = canvasEnabled
+    ? canvasOnlyMode || isViewingCanvasTabRaw
+    : false
   const reviewResults = useChatStore(state => state.reviewResults[worktreeId])
   const reviewingSessions = useChatStore(state => state.reviewingSessions)
-
 
   // Actions via getState() - no subscription, stable references
   const {
     setActiveSession,
     setViewingReviewTab,
+    setViewingCanvasTab,
     clearReviewResults,
     getActiveSession,
     isSending,
@@ -585,17 +601,6 @@ export function SessionTabBar({
       }
     )
   }, [worktreeId, worktreePath, createSession, setActiveSession])
-
-  // Listen for global create-new-session event from keybinding (CMD+T)
-  useEffect(() => {
-    const handleCreateNewSession = () => {
-      handleCreateSession()
-    }
-
-    window.addEventListener('create-new-session', handleCreateNewSession)
-    return () =>
-      window.removeEventListener('create-new-session', handleCreateNewSession)
-  }, [handleCreateSession])
 
   // Scroll to pending session after query refetch renders it
   useEffect(() => {
@@ -700,15 +705,22 @@ export function SessionTabBar({
     (sessionId: string) => {
       startTransition(() => {
         setViewingReviewTab(worktreeId, false)
+        setViewingCanvasTab(worktreeId, false)
         setActiveSession(worktreeId, sessionId)
       })
     },
-    [worktreeId, setActiveSession, setViewingReviewTab]
+    [worktreeId, setActiveSession, setViewingReviewTab, setViewingCanvasTab]
   )
 
   const handleReviewTabClick = useCallback(() => {
     setViewingReviewTab(worktreeId, true)
-  }, [worktreeId, setViewingReviewTab])
+    setViewingCanvasTab(worktreeId, false)
+  }, [worktreeId, setViewingReviewTab, setViewingCanvasTab])
+
+  const handleCanvasTabClick = useCallback(() => {
+    setViewingCanvasTab(worktreeId, true)
+    setViewingReviewTab(worktreeId, false)
+  }, [worktreeId, setViewingCanvasTab, setViewingReviewTab])
 
   const handleCloseReviewTab = useCallback(
     (e: React.MouseEvent) => {
@@ -796,7 +808,9 @@ export function SessionTabBar({
   const executionModes = useChatStore(state => state.executionModes)
   const activeToolCalls = useChatStore(state => state.activeToolCalls)
   const answeredQuestions = useChatStore(state => state.answeredQuestions)
-  const waitingForInputSessionIds = useChatStore(state => state.waitingForInputSessionIds)
+  const waitingForInputSessionIds = useChatStore(
+    state => state.waitingForInputSessionIds
+  )
 
   // PERFORMANCE: Pre-compute session states ONCE per render instead of per-tab-map-iteration
   // This avoids O(n × m) work where n = sessions, m = messages per session
@@ -836,7 +850,8 @@ export function SessionTabBar({
       // Check explicit waiting state (set by useStreamingEvents when AskUserQuestion/ExitPlanMode completes)
       const isExplicitlyWaiting = waitingForInputSessionIds[session.id] ?? false
 
-      const sessionWaiting = isStreamingWaiting || hasPendingQuestion || isExplicitlyWaiting
+      const sessionWaiting =
+        isStreamingWaiting || hasPendingQuestion || isExplicitlyWaiting
 
       // Execution mode - use executingModes when sending for immediate feedback
       const executionMode = sessionSending
@@ -941,7 +956,12 @@ export function SessionTabBar({
       waitingGroupStates: waitingGroupStates.sort(sortByRecentActivity),
       reviewingGroupStates: reviewingGroupStates.sort(sortByRecentActivity),
     }
-  }, [sessionStates, reviewingSessions, sortByRecentActivity, preferences?.session_grouping_enabled])
+  }, [
+    sessionStates,
+    reviewingSessions,
+    sortByRecentActivity,
+    preferences?.session_grouping_enabled,
+  ])
 
   // Compute visual order for keyboard navigation (matches display order)
   const visualOrderSessions = useMemo(() => {
@@ -958,7 +978,16 @@ export function SessionTabBar({
       ...yoloingGroupStates,
       ...reviewingGroupStates,
     ].map(s => s.session)
-  }, [shouldGroup, sessionStates, activeGroupStates, planningGroupStates, waitingGroupStates, vibingGroupStates, yoloingGroupStates, reviewingGroupStates])
+  }, [
+    shouldGroup,
+    sessionStates,
+    activeGroupStates,
+    planningGroupStates,
+    waitingGroupStates,
+    vibingGroupStates,
+    yoloingGroupStates,
+    reviewingGroupStates,
+  ])
 
   // Listen for global switch-session event from keybindings (CMD+Arrow)
   // Use throttle to prevent flickery switching when pressing rapidly
@@ -1037,6 +1066,26 @@ export function SessionTabBar({
         viewportRef={tabScrollRef}
       >
         <div className="flex h-8 items-center gap-0.5 px-2">
+          {/* Canvas tab - session overview grid (shown when canvas is enabled) */}
+          {canvasEnabled && (
+            <button
+              type="button"
+              onClick={handleCanvasTabClick}
+              className={cn(
+                'group relative flex h-7 shrink-0 items-center gap-1 rounded-t px-2 text-sm transition-colors',
+                isViewingCanvasTab
+                  ? 'text-foreground font-medium border-b-2 border-foreground'
+                  : 'text-muted-foreground hover:text-foreground/70'
+              )}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+              <span className="whitespace-nowrap">Canvas</span>
+              <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium">
+                {sessionStates.length}
+              </span>
+            </button>
+          )}
+
           {/* AI Review results tab - shown when review results exist */}
           {reviewResults && (
             <div
@@ -1078,8 +1127,8 @@ export function SessionTabBar({
             </div>
           )}
 
-          {/* Session tabs - grouped or flat depending on count */}
-          {shouldGroup ? (
+          {/* Session tabs - grouped or flat depending on count (hidden in canvas-only mode) */}
+          {canvasOnlyMode ? null : shouldGroup ? (
             // GROUPED MODE (> 6 sessions) - no drag-and-drop
             <>
               <SessionGroupDropdown
@@ -1164,8 +1213,7 @@ export function SessionTabBar({
                 {/* PERFORMANCE: Use pre-computed sessionStates instead of inline computation */}
                 {sessionStates.map(state => {
                   const isActive =
-                    state.id === activeSessionId &&
-                    !isViewingReviewTab
+                    state.id === activeSessionId && !isViewingReviewTab
                   const isEditing = editingId === state.id
                   const isSessionReviewing =
                     reviewingSessions[state.id] ?? false
@@ -1197,16 +1245,18 @@ export function SessionTabBar({
             </DndContext>
           )}
 
-          {/* Add new session button */}
-          <button
-            type="button"
-            onClick={handleCreateSession}
-            disabled={createSession.isPending}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground"
-            aria-label="New session"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </button>
+          {/* Add new session button (hidden in canvas-only mode) */}
+          {!canvasOnlyMode && (
+            <button
+              type="button"
+              onClick={handleCreateSession}
+              disabled={createSession.isPending}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground"
+              aria-label="New session"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
       </ScrollArea>
     </div>

@@ -18,7 +18,11 @@ export type KeybindingAction =
   | 'previous_worktree'
   | 'cycle_execution_mode'
   | 'approve_plan'
+  | 'approve_plan_yolo'
+  | 'open_plan'
+  | 'open_recap'
   | 'restore_last_archived'
+  | 'focus_canvas_search'
 
 // Shortcut string format: "mod+key" where mod is cmd/ctrl
 // Examples: "mod+l", "mod+shift+p", "mod+1"
@@ -56,7 +60,11 @@ export const DEFAULT_KEYBINDINGS: KeybindingsMap = {
   previous_worktree: 'mod+alt+arrowup',
   cycle_execution_mode: 'shift+tab',
   approve_plan: 'mod+enter',
+  approve_plan_yolo: 'mod+y',
+  open_plan: 'p',
+  open_recap: 'r',
   restore_last_archived: 'mod+shift+t',
+  focus_canvas_search: 'slash',
 }
 
 // UI definitions for the settings pane
@@ -168,6 +176,27 @@ export const KEYBINDING_DEFINITIONS: KeybindingDefinition[] = [
     category: 'chat',
   },
   {
+    action: 'approve_plan_yolo',
+    label: 'Approve plan (YOLO)',
+    description: 'Approve the current plan with YOLO mode',
+    default_shortcut: 'mod+y',
+    category: 'chat',
+  },
+  {
+    action: 'open_plan',
+    label: 'Open plan',
+    description: 'Open the plan dialog for the selected session',
+    default_shortcut: 'p',
+    category: 'chat',
+  },
+  {
+    action: 'open_recap',
+    label: 'Open recap',
+    description: 'Open the session recap dialog for the selected session',
+    default_shortcut: 'r',
+    category: 'chat',
+  },
+  {
     action: 'new_worktree',
     label: 'New worktree',
     description: 'Create a new worktree in the current project',
@@ -195,10 +224,21 @@ export const KEYBINDING_DEFINITIONS: KeybindingDefinition[] = [
     default_shortcut: 'mod+shift+t',
     category: 'navigation',
   },
+  {
+    action: 'focus_canvas_search',
+    label: 'Focus canvas search',
+    description: 'Focus the search input on canvas views',
+    default_shortcut: 'slash',
+    category: 'navigation',
+  },
 ]
 
 // Helper to convert shortcut string to display format
-export function formatShortcutDisplay(shortcut: ShortcutString): string {
+export function formatShortcutDisplay(
+  shortcut: ShortcutString | undefined | null
+): string {
+  if (!shortcut) return ''
+
   const isMac =
     typeof navigator !== 'undefined' && navigator.platform.includes('Mac')
   // On macOS web, Cmd shortcuts are intercepted by the browser.
@@ -229,6 +269,8 @@ export function formatShortcutDisplay(shortcut: ShortcutString): string {
           return '←'
         case 'arrowright':
           return '→'
+        case 'slash':
+          return '/'
         case 'backspace':
           return isMac ? '⌫' : 'Backspace'
         case 'enter':

@@ -141,8 +141,20 @@ export interface Session {
   is_reviewing?: boolean
   /** Whether this session is waiting for user input (AskUserQuestion, ExitPlanMode) */
   waiting_for_input?: boolean
+  /** Type of waiting: 'question' for AskUserQuestion, 'plan' for ExitPlanMode */
+  waiting_for_input_type?: 'question' | 'plan' | null
   /** Message IDs whose plans have been approved (for NDJSON-only storage) */
   approved_plan_message_ids?: string[]
+  /** File path to the current plan (extracted from Write tool calls) */
+  plan_file_path?: string
+  /** Message ID of the pending plan awaiting approval (for Canvas view) */
+  pending_plan_message_id?: string
+  /** Persisted session digest (recap summary) */
+  digest?: SessionDigest
+  /** Status of the last run (for immediate status on app restart) */
+  last_run_status?: RunStatus
+  /** Execution mode of the last run (plan/build/yolo) */
+  last_run_execution_mode?: ExecutionMode
 }
 
 /**

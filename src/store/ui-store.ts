@@ -1,7 +1,13 @@
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
 
-export type PreferencePane = 'general' | 'appearance' | 'keybindings' | 'magic-prompts' | 'experimental' | 'web-access'
+export type PreferencePane =
+  | 'general'
+  | 'appearance'
+  | 'keybindings'
+  | 'magic-prompts'
+  | 'experimental'
+  | 'web-access'
 
 export type OnboardingStartStep = 'claude' | 'gh' | null
 
@@ -96,8 +102,16 @@ interface UIState {
   autoInvestigateWorktreeIds: Set<string>
   /** Worktree IDs that should auto-trigger investigate-pr when created */
   autoInvestigatePRWorktreeIds: Set<string>
+  /** Worktree IDs that should auto-open first session modal when canvas mounts */
+  autoOpenSessionWorktreeIds: Set<string>
   /** Project ID for the Session Board modal (null = closed) */
   sessionBoardProjectId: string | null
+  /** Whether a session chat modal is open (for magic command keybinding checks) */
+  sessionChatModalOpen: boolean
+  /** Which worktree the session chat modal is for (for magic command worktree resolution) */
+  sessionChatModalWorktreeId: string | null
+  /** Whether a plan dialog is open (blocks canvas approve keybindings) */
+  planDialogOpen: boolean
 
   toggleLeftSidebar: () => void
   setLeftSidebarVisible: (visible: boolean) => void
@@ -128,8 +142,12 @@ interface UIState {
   consumeAutoInvestigate: (worktreeId: string) => boolean
   markWorktreeForAutoInvestigatePR: (worktreeId: string) => void
   consumeAutoInvestigatePR: (worktreeId: string) => boolean
+  markWorktreeForAutoOpenSession: (worktreeId: string) => void
+  consumeAutoOpenSession: (worktreeId: string) => boolean
   openSessionBoardModal: (projectId: string) => void
   closeSessionBoardModal: () => void
+  setSessionChatModalOpen: (open: boolean, worktreeId?: string | null) => void
+  setPlanDialogOpen: (open: boolean) => void
 }
 
 export const useUIStore = create<UIState>()(
@@ -157,7 +175,11 @@ export const useUIStore = create<UIState>()(
       branchConflictData: null,
       autoInvestigateWorktreeIds: new Set(),
       autoInvestigatePRWorktreeIds: new Set(),
+      autoOpenSessionWorktreeIds: new Set(),
       sessionBoardProjectId: null,
+      sessionChatModalOpen: false,
+      sessionChatModalWorktreeId: null,
+      planDialogOpen: false,
 
       toggleLeftSidebar: () =>
         set(
@@ -237,7 +259,11 @@ export const useUIStore = create<UIState>()(
         set({ magicModalOpen: open }, undefined, 'setMagicModalOpen'),
 
       setNewWorktreeModalOpen: open =>
-        set({ newWorktreeModalOpen: open }, undefined, 'setNewWorktreeModalOpen'),
+        set(
+          { newWorktreeModalOpen: open },
+          undefined,
+          'setNewWorktreeModalOpen'
+        ),
 
       setCheckoutPRModalOpen: open =>
         set({ checkoutPRModalOpen: open }, undefined, 'setCheckoutPRModalOpen'),
@@ -258,14 +284,22 @@ export const useUIStore = create<UIState>()(
 
       openCliLoginModal: (type, command) =>
         set(
-          { cliLoginModalOpen: true, cliLoginModalType: type, cliLoginModalCommand: command },
+          {
+            cliLoginModalOpen: true,
+            cliLoginModalType: type,
+            cliLoginModalCommand: command,
+          },
           undefined,
           'openCliLoginModal'
         ),
 
       closeCliLoginModal: () =>
         set(
-          { cliLoginModalOpen: false, cliLoginModalType: null, cliLoginModalCommand: null },
+          {
+            cliLoginModalOpen: false,
+            cliLoginModalType: null,
+            cliLoginModalCommand: null,
+          },
           undefined,
           'closeCliLoginModal'
         ),
@@ -280,7 +314,11 @@ export const useUIStore = create<UIState>()(
         set({ branchConflictData: data }, undefined, 'openBranchConflictModal'),
 
       closeBranchConflictModal: () =>
-        set({ branchConflictData: null }, undefined, 'closeBranchConflictModal'),
+        set(
+          { branchConflictData: null },
+          undefined,
+          'closeBranchConflictModal'
+        ),
 
       markWorktreeForAutoInvestigate: worktreeId =>
         set(
@@ -340,11 +378,61 @@ export const useUIStore = create<UIState>()(
         return false
       },
 
+      markWorktreeForAutoOpenSession: worktreeId =>
+        set(
+          state => ({
+            autoOpenSessionWorktreeIds: new Set([
+              ...state.autoOpenSessionWorktreeIds,
+              worktreeId,
+            ]),
+          }),
+          undefined,
+          'markWorktreeForAutoOpenSession'
+        ),
+
+      consumeAutoOpenSession: worktreeId => {
+        const state = useUIStore.getState()
+        if (state.autoOpenSessionWorktreeIds.has(worktreeId)) {
+          set(
+            state => {
+              const newSet = new Set(state.autoOpenSessionWorktreeIds)
+              newSet.delete(worktreeId)
+              return { autoOpenSessionWorktreeIds: newSet }
+            },
+            undefined,
+            'consumeAutoOpenSession'
+          )
+          return true
+        }
+        return false
+      },
+
       openSessionBoardModal: projectId =>
-        set({ sessionBoardProjectId: projectId }, undefined, 'openSessionBoardModal'),
+        set(
+          { sessionBoardProjectId: projectId },
+          undefined,
+          'openSessionBoardModal'
+        ),
 
       closeSessionBoardModal: () =>
-        set({ sessionBoardProjectId: null }, undefined, 'closeSessionBoardModal'),
+        set(
+          { sessionBoardProjectId: null },
+          undefined,
+          'closeSessionBoardModal'
+        ),
+
+      setSessionChatModalOpen: (open, worktreeId) =>
+        set(
+          {
+            sessionChatModalOpen: open,
+            sessionChatModalWorktreeId: open ? (worktreeId ?? null) : null,
+          },
+          undefined,
+          'setSessionChatModalOpen'
+        ),
+
+      setPlanDialogOpen: open =>
+        set({ planDialogOpen: open }, undefined, 'setPlanDialogOpen'),
     }),
     {
       name: 'ui-store',
