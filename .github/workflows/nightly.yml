@@ -1,7 +1,7 @@
 name: Nightly Build
 
 on:
-  workflow_dispatch:      # Manual trigger
+  workflow_dispatch: # Manual trigger
 
 jobs:
   sync:
@@ -13,6 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
 
       - name: Sync upstream and push
@@ -72,9 +73,9 @@ jobs:
       matrix:
         include:
           - platform: macos-latest
-            args: '--target universal-apple-darwin --bundles app,dmg'
+            args: "--target universal-apple-darwin --bundles app,dmg"
           - platform: windows-latest
-            args: '--bundles msi,nsis'
+            args: "--bundles msi,nsis"
 
     runs-on: ${{ matrix.platform }}
     defaults:
@@ -99,8 +100,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 'lts/*'
-          cache: 'npm'
+          node-version: "lts/*"
+          cache: "npm"
           cache-dependency-path: jean/package-lock.json
 
       - name: Install Rust
@@ -115,7 +116,7 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: './jean/src-tauri -> target'
+          workspaces: "./jean/src-tauri -> target"
 
       - name: Install dependencies
         run: npm ci
@@ -130,7 +131,7 @@ jobs:
           projectPath: jean
           tauriScript: npm run tauri
           tagName: nightly-${{ github.run_number }}
-          releaseName: 'Nightly Build #${{ github.run_number }}'
+          releaseName: "Nightly Build #${{ github.run_number }}"
           releaseBody: |
             ## Nightly Build
 
